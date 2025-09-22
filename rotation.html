@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회전체 탐구</title>
+    
+    <style>
+        /* 모든 요소의 박스 모델을 border-box로 설정하여 패딩과 테두리가 너비/높이에 포함되도록 합니다. */
+        * { box-sizing: border-box; }
+        
+        /* html과 body의 마진과 패딩을 제거하고, 너비와 높이를 100%로 설정하여 전체 화면을 차지하게 합니다. */
+        /* 스크롤바가 생기지 않도록 overflow를 hidden으로 설정합니다. */
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        
+        /* body 스타일: 폰트, 배경색, 텍스트 색상 설정 및 Flexbox를 사용하여 콘텐츠를 중앙에 배치합니다. */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+            background-color: #f0f2f5; 
+            color: #333; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            padding: 15px; 
+        }
+        
+        /* 컨테이너 스타일: Flexbox, 배경색, 그림자, 패딩 등을 설정하여 주요 콘텐츠 영역을 만듭니다. */
+        /* clamp()를 사용하여 패딩 값을 반응형으로 조절합니다. */
+        #container { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background-color: #fff; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+            padding: clamp(10px, 2vw, 20px); 
+            width: 100%; 
+            height: 100%; 
+            max-width: 1400px; 
+        }
+        
+        /* 캔버스 래퍼: 캔버스들의 부모 요소로, 상대 위치 지정을 통해 자식 캔버스들을 절대 위치로 배치합니다. */
+        #canvas-wrapper { 
+            position: relative; 
+            width: 100%; 
+            flex: 1 1 auto; /* Flex 아이템으로서 남은 공간을 채우도록 합니다. */
+            min-height: 0; /* Flex 아이템의 최소 높이를 설정하여 오버플로우를 방지합니다. */
+        }
+        
+        /* 메인 캔버스 (2D 그리기 및 3D 렌더링 캔버스) 공통 스타일 */
+        .main-canvas { 
+            position: absolute; /* 캔버스 래퍼 내에서 절대 위치로 배치됩니다. */
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            border: 1px solid #ccc; 
+            border-radius: 8px; 
+            background-color: #fafafa; 
+            cursor: crosshair; /* 그리기 모드일 때 십자선 커서 */
+        }
+        
+        /* 오른쪽 상단 컨트롤 영역 스타일 */
+        .top-right-controls { 
+            position: absolute; 
+            top: 15px; 
+            right: 15px; 
+            z-index: 10; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; /* 버튼들 사이의 간격 */
+        }
+        
+        /* 컨트롤 버튼 스타일 */
+        .top-right-controls button { 
+            font-size: 16px; 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            background-color: #007bff; 
+            color: white; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            transition: background-color 0.2s ease; /* 부드러운 호버 효과를 위한 전환 */
+        }
+        
+        /* 비활성화된 버튼 스타일 */
+        .top-right-controls button:disabled { 
+            background-color: #a0a0a0; 
+            cursor: not-allowed; 
+        }
+        
+        /* 자르기(Clipping) 컨트롤 영역 스타일 */
+        .clipping-controls { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: flex-start; 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 8px; 
+            border: 1px solid #dee2e6; 
+            width: 90%; 
+            max-width: 420px; 
+            margin-top: auto; /* 컨테이너 하단으로 밀어냅니다 (Flexbox 컨테이너 내에서). */
+        }
+        
+        /* 각 클립 그룹 (라디오 버튼 + 슬라이더) 스타일 */
+        .clip-group { 
+            display: flex; 
+            align-items: center; 
+            margin: 5px 0; 
+            width: 100%; 
+            flex-wrap: wrap; /* 작은 화면에서 요소들이 줄바꿈되도록 합니다. */
+        }
+        
+        /* 클립 라벨 스타일 */
+        .clip-group label { 
+            margin: 0 10px; 
+            font-size: 14px; 
+            white-space: nowrap; /* 라벨 텍스트가 줄바꿈되지 않도록 합니다. */
+        }
+        
+        /* 클립 슬라이더(range input) 스타일 */
+        .clip-group input[type="range"] { 
+            flex-grow: 1; /* 남은 공간을 채우도록 합니다. */
+            min-width: 100px; /* 슬라이더의 최소 너비를 지정합니다. */
+        }
+        
+        /* 미디어 쿼리: 큰 화면 (데스크탑) */
+        @media (min-width: 992px) {
+            .clipping-controls { 
+                position: absolute; /* 데스크탑에서는 절대 위치로 오른쪽 하단에 배치됩니다. */
+                bottom: 15px; 
+                right: 15px; 
+                z-index: 10; 
+                width: auto; 
+                max-width: none; 
+                background: rgba(248, 249, 250, 0.9); /* 반투명 배경 */
+                backdrop-filter: blur(4px); /* 뒤쪽 콘텐츠를 흐리게 처리 */
+            }
+        }
+        
+        /* 미디어 쿼리: 작은 화면 (모바일) */
+        @media (max-width: 768px) {
+            .clip-group {
+                flex-direction: column; /* 세로 방향으로 정렬 */
+                align-items: flex-start; /* 왼쪽 정렬 */
+            }
+            .clip-group input[type="range"] { 
+                width: 100%; 
+                margin-top: 5px; 
+                margin-left: 0; /* 모바일에서 슬라이더의 왼쪽 마진 제거 */
+            }
+            .clip-group label {
+                margin-left: 0; /* 모바일에서 라벨의 왼쪽 마진 제거 */
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="container">
+        <div id="canvas-wrapper">
+            <!-- 2D 드로잉 캔버스: 사용자가 2D 프로필을 그리는 영역 -->
+            <canvas id="drawingCanvas" class="main-canvas"></canvas>
+            
+            <!-- Three.js 3D 렌더링 캔버스: 회전체가 표시되는 영역 (초기에는 숨김) -->
+            <canvas id="threeCanvas" class="main-canvas" style="display: none; cursor: grab;"></canvas>
+            
+            <!-- 오른쪽 상단 컨트롤: 회전체 생성 및 초기화 버튼 -->
+            <div class="top-right-controls">
+                <button id="revolveButton" disabled>회전체 생성</button>
+                <button id="resetButton">초기화</button>
+            </div>
+            
+            <!-- 자르기(Clipping) 컨트롤: 3D 모델의 단면을 제어하는 UI (초기에는 숨김) -->
+            <div id="clippingControls" class="clipping-controls" style="display: none;">
+                <div class="clip-group">
+                    <input type="radio" id="clipOff" name="clip-mode" value="off" checked>
+                    <label for="clipOff">회전체 탐구</label>
+                </div>
+                <div class="clip-group">
+                    <input type="radio" id="clipHorizontal" name="clip-mode" value="horizontal">
+                    <label for="clipHorizontal">회전축에 수직인 평면으로 자르기</label>
+                    <input type="range" id="clipHorizontalSlider" min="-200" max="200" value="0" disabled>
+                </div>
+                <div class="clip-group">
+                    <input type="radio" id="clipVertical" name="clip-mode" value="vertical">
+                    <label for="clipVertical">회전축을 포함하는 평면으로 자르기</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 외부 Three.js 라이브러리 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/EdgesGeometry.js"></script>
+
+    <script>
+        // 전역 변수 선언: 필요한 DOM 요소들과 프로그램 상태를 저장합니다.
+        const canvasWrapper = document.getElementById('canvas-wrapper');
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const threeCanvas = document.getElementById('threeCanvas');
+        const ctx = drawingCanvas.getContext('2d'); // 2D 캔버스 컨텍스트
+
+        const revolveButton = document.getElementById('revolveButton');
+        const resetButton = document.getElementById('resetButton');
+        const clippingControlsUI = document.getElementById('clippingControls');
+        const clipOffRadio = document.getElementById('clipOff');
+        const clipHorizontalSlider = document.getElementById('clipHorizontalSlider');
+
+        let points = []; // 사용자가 그린 2D 포인트를 저장하는 배열
+        let isShapeClosed = false; // 2D 도형이 닫혔는지 여부
+        let threeApp = null; // Three.js 애플리케이션 상태 객체
+        let animationFrameId = null; // 애니메이션 프레임 ID (requestAnimationFrame 관리용)
+
+        let isGenerating = false; // 회전체 생성 애니메이션 중인지 여부
+        let currentAngle = 0; // 현재 회전 각도
+        let GRID_SIZE = 20; // 2D 캔버스의 그리드 크기
+
+        const ROTATION_SPEED = 0.05; // 회전 애니메이션 속도
+        const POINT_RADIUS = 5; // 2D 그리기 시 점의 반지름
+        const CLOSING_THRESHOLD = 15; // 도형을 닫을 때 첫 점과의 거리 임계값
+
+        // 3D 클리핑(자르기)에 사용될 평면 객체
+        const horizontalPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+        const verticalPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
+        const globalClippingPlanes = []; // Three.js 렌더러에 적용될 클리핑 평면 배열
+
+        /**
+         * 캔버스 크기를 래퍼에 맞게 조절하고, Three.js 렌더러와 카메라를 업데이트합니다.
+         */
+        function resizeCanvas() {
+            const { width, height } = canvasWrapper.getBoundingClientRect();
+            if (drawingCanvas.width !== width || drawingCanvas.height !== height) {
+                drawingCanvas.width = width;
+                drawingCanvas.height = height;
+                threeCanvas.width = width;
+                threeCanvas.height = height;
+            }
+            if (threeApp) {
+                threeApp.renderer.setSize(width, height);
+                threeApp.camera.aspect = width / height;
+                threeApp.camera.updateProjectionMatrix();
+            }
+            GRID_SIZE = Math.max(20, Math.round(width / 40)); 
+            draw2DShape();
+        }
+
+        let resizeTimeout; 
+        window.addEventListener('resize', () => { 
+            clearTimeout(resizeTimeout); 
+            resizeTimeout = setTimeout(resizeCanvas, 100); 
+        });
+
+        /** 2D 캔버스에 그리드를 그립니다. */
+        function drawGrid() {
+            const centerX = drawingCanvas.width / 2;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.lineWidth = 0.5;
+            for (let x = centerX + GRID_SIZE; x < drawingCanvas.width; x += GRID_SIZE) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, drawingCanvas.height); ctx.stroke(); }
+            for (let x = centerX - GRID_SIZE; x > 0; x -= GRID_SIZE) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, drawingCanvas.height); ctx.stroke(); }
+            for (let y = 0; y < drawingCanvas.height; y += GRID_SIZE) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(drawingCanvas.width, y); ctx.stroke(); }
+            ctx.restore();
+        }
+
+        /** 2D 캔버스에 회전축(점선 Y축)을 그립니다. */
+        function drawYAxis() {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(drawingCanvas.width / 2, 0);
+            ctx.lineTo(drawingCanvas.width / 2, drawingCanvas.height);
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        /** 2D 캔버스에 현재까지 그려진 도형과 점들을 그립니다. */
+        function draw2DShape() {
+            ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            drawGrid();
+            drawYAxis();
+            if (points.length === 0) return;
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            points.forEach(p => ctx.lineTo(p.x, p.y));
+            if (isShapeClosed) {
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(0,123,255,0.2)';
+                ctx.fill();
+            }
+            ctx.stroke();
+            points.forEach((point, index) => {
+                ctx.beginPath();
+                ctx.fillStyle = (index === 0) ? '#28a745' : '#dc3545';
+                ctx.arc(point.x, point.y, POINT_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        /** 2D 캔버스 클릭 이벤트를 처리하여 점을 추가합니다. */
+        function handleCanvasClick(event) {
+            if (isShapeClosed) return;
+            const rect = drawingCanvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+            const centerX = drawingCanvas.width / 2;
+            const offsetX = mouseX - centerX;
+            const snappedOffsetX = Math.round(offsetX / GRID_SIZE) * GRID_SIZE;
+            const snappedX = centerX + snappedOffsetX;
+            const snappedY = Math.round(mouseY / GRID_SIZE) * GRID_SIZE;
+            if (points.length >= 3) {
+                const firstPoint = points[0];
+                const distance = Math.sqrt(Math.pow(snappedX - firstPoint.x, 2) + Math.pow(snappedY - firstPoint.y, 2));
+                if (distance < CLOSING_THRESHOLD) {
+                    isShapeClosed = true;
+                    revolveButton.disabled = false;
+                    draw2DShape();
+                    return;
+                }
+            }
+            points.push({ x: snappedX, y: snappedY });
+            draw2DShape();
+        }
+
+        /** 2D 캔버스에 그려진 점들을 Three.js의 Vector2 형태로 변환합니다. */
+        function preparePointsFor3D() {
+            const centerX = drawingCanvas.width / 2, centerY = drawingCanvas.height / 2;
+            let finalPoints = [...points];
+            if (isShapeClosed && finalPoints.length > 0) {
+                finalPoints.push(finalPoints[0]);
+            }
+            return finalPoints.map(p => new THREE.Vector2(p.x - centerX, -(p.y - centerY)));
+        }
+        
+        /** Three.js 3D 환경을 초기화하고, 회전체를 생성합니다. */
+        function init3D() {
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f2f5);
+            const camera = new THREE.PerspectiveCamera(75, threeCanvas.width / threeCanvas.height, 0.1, 1000);
+            camera.position.set(0, 150, 400);
+            const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true });
+            renderer.localClippingEnabled = true;
+            renderer.setSize(threeCanvas.width, threeCanvas.height);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 50, 100);
+            scene.add(directionalLight);
+            const axisMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+            const axisPoints = [new THREE.Vector3(0, -500, 0), new THREE.Vector3(0, 500, 0)];
+            const axisGeometry = new THREE.BufferGeometry().setFromPoints(axisPoints);
+            const yAxisLine = new THREE.Line(axisGeometry, axisMaterial);
+            scene.add(yAxisLine);
+            const shapePoints = preparePointsFor3D();
+            const geometry = new THREE.LatheGeometry(shapePoints, 32, 0, currentAngle);
+            const baseColor = new THREE.Color(0x007bff);
+            const surfaceMaterial = new THREE.MeshStandardMaterial({ color: baseColor, side: THREE.DoubleSide, clippingPlanes: globalClippingPlanes, clipIntersection: true, transparent: true, opacity: 0.5 });
+            const surfaceMesh = new THREE.Mesh(geometry, surfaceMaterial);
+            const edgesGeometry = new THREE.EdgesGeometry(geometry, 20);
+            const edgesMaterial = new THREE.LineBasicMaterial({ color: baseColor.clone().multiplyScalar(0.6), clippingPlanes: globalClippingPlanes });
+            const edgesMesh = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+            const group = new THREE.Group();
+            group.add(surfaceMesh);
+            group.add(edgesMesh);
+            scene.add(group);
+            group.rotation.y = Math.PI / 2;
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.enabled = false;
+            return { scene, camera, renderer, lathe: group, controls, shapePoints };
+        }
+        
+        /** 애니메이션 루프 함수: 매 프레임마다 렌더링을 업데이트합니다. */
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            if (isGenerating) {
+                currentAngle += ROTATION_SPEED;
+                if (currentAngle >= Math.PI * 2) {
+                    currentAngle = Math.PI * 2;
+                    isGenerating = false;
+                    clippingControlsUI.style.display = 'flex';
+                    threeApp.controls.enabled = true;
+                    threeApp.lathe.children[0].material.depthWrite = true;
+                }
+                const newGeometry = new THREE.LatheGeometry(threeApp.shapePoints, 32, 0, currentAngle);
+                const newEdgesGeometry = new THREE.EdgesGeometry(newGeometry, 20);
+                const surface = threeApp.lathe.children[0];
+                const edges = threeApp.lathe.children[1];
+                surface.geometry.dispose();
+                edges.geometry.dispose();
+                surface.geometry = newGeometry;
+                edges.geometry = newEdgesGeometry;
+            }
+            if (threeApp.controls.enabled) {
+                threeApp.controls.update();
+            }
+            threeApp.renderer.render(threeApp.scene, threeApp.camera);
+        }
+
+        // --- 이벤트 리스너 ---
+
+        /** '회전체 생성' 버튼 클릭 시 Three.js 3D 뷰를 초기화하고 애니메이션을 시작합니다. */
+        revolveButton.addEventListener('click', () => {
+            if (!isShapeClosed) return;
+            revolveButton.disabled = true;
+            resetButton.textContent = "초기화";
+            isGenerating = true;
+            currentAngle = 0.01;
+            drawingCanvas.style.display = 'none';
+            threeCanvas.style.display = 'block';
+            threeApp = init3D();
+            threeApp.lathe.children[0].material.depthWrite = false;
+            animate();
+        });
+
+        /** '초기화' 버튼 클릭 시 모든 상태를 초기화합니다. */
+        resetButton.addEventListener('click', () => {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            points = []; isShapeClosed = false; threeApp = null; animationFrameId = null;
+            isGenerating = false; currentAngle = 0;
+            threeCanvas.style.display = 'none';
+            drawingCanvas.style.display = 'block';
+            clippingControlsUI.style.display = 'none';
+            resizeCanvas();
+            revolveButton.disabled = true;
+            revolveButton.textContent = "회전체 생성";
+            resetButton.textContent = "초기화";
+            globalClippingPlanes.length = 0;
+            clipOffRadio.checked = true;
+            clipHorizontalSlider.disabled = true;
+            clipHorizontalSlider.value = 0;
+            horizontalPlane.constant = 0;
+        });
+
+        /** 2D 캔버스 클릭 이벤트 리스너 등록 */
+        drawingCanvas.addEventListener('click', handleCanvasClick);
+
+        /** 클리핑 컨트롤(라디오 버튼) 변경 시 클리핑 모드를 업데이트합니다. */
+        clippingControlsUI.addEventListener('change', (e) => {
+            if (!threeApp) return;
+            const selectedMode = document.querySelector('input[name="clip-mode"]:checked').value;
+            globalClippingPlanes.length = 0;
+            clipHorizontalSlider.disabled = true;
+            threeApp.controls.minAzimuthAngle = -Infinity;
+            threeApp.controls.maxAzimuthAngle = Infinity;
+            if (selectedMode === 'horizontal') {
+                globalClippingPlanes.push(horizontalPlane);
+                clipHorizontalSlider.disabled = false;
+            } else if (selectedMode === 'vertical') {
+                verticalPlane.constant = 0;
+                globalClippingPlanes.push(verticalPlane);
+                threeApp.controls.minAzimuthAngle = Math.PI / 2;
+                threeApp.controls.maxAzimuthAngle = Math.PI / 2;
+            }
+            threeApp.controls.update();
+        });
+
+        /** 수평 클리핑 슬라이더 값 변경 시 수평 평면의 위치를 업데이트합니다. */
+        clipHorizontalSlider.addEventListener('input', (e) => {
+            horizontalPlane.constant = parseFloat(e.target.value);
+        });
+        
+        // 페이지 로드 시 캔버스 크기를 초기화하고 2D 캔버스를 그립니다.
+        resizeCanvas();
+    </script>
+</body>
+</html>
